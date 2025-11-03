@@ -306,6 +306,7 @@ func (c *OllamaClient) generateInternal(req OllamaRequest) (string, error) {
 }
 
 func (c *OllamaClient) chatInternal(req OllamaRequest) (string, error) {
+	// Try /api/chat first (newer Ollama versions)
 	url := c.baseURL + "/api/chat"
 
 	jsonData, err := json.Marshal(req)
@@ -325,6 +326,25 @@ func (c *OllamaClient) chatInternal(req OllamaRequest) (string, error) {
 	}
 	defer resp.Body.Close()
 
+	// If /api/chat returns 405 (Method Not Allowed) or 404, fallback to /api/generate
+	if resp.StatusCode == http.StatusMethodNotAllowed || resp.StatusCode == http.StatusNotFound {
+		c.logger.Debug("Ollama /api/chat not available, falling back to /api/generate",
+			zap.Int("status", resp.StatusCode))
+		
+		// Convert chat messages to a prompt for /api/generate
+		prompt := c.convertMessagesToPrompt(req.Messages)
+		
+		// Use generate instead
+		generateReq := OllamaRequest{
+			Model:   req.Model,
+			Prompt:  prompt,
+			Stream:  false,
+			Options: req.Options,
+		}
+		
+		return c.generateInternal(generateReq)
+	}
+
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
 		return "", fmt.Errorf("ollama API returned status %d: %s", resp.StatusCode, string(body))
@@ -340,6 +360,25 @@ func (c *OllamaClient) chatInternal(req OllamaRequest) (string, error) {
 	}
 
 	return ollamaResp.Response, nil
+}
+
+// convertMessagesToPrompt converts chat messages to a single prompt string
+func (c *OllamaClient) convertMessagesToPrompt(messages []Message) string {
+	var prompt strings.Builder
+	
+	for _, msg := range messages {
+		switch msg.Role {
+		case "system":
+			prompt.WriteString(fmt.Sprintf("System: %s\n\n", msg.Content))
+		case "user":
+			prompt.WriteString(fmt.Sprintf("User: %s\n\n", msg.Content))
+		case "assistant":
+			prompt.WriteString(fmt.Sprintf("Assistant: %s\n\n", msg.Content))
+		}
+	}
+	
+	prompt.WriteString("Assistant:")
+	return prompt.String()
 }
 
 func (c *OllamaClient) extractToolNames(response string) []string {
