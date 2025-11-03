@@ -1,4 +1,4 @@
-# H-AI - HexStrike AI Clone in Go
+# H-AI 
 
 🚀 **Advanced AI-Powered Penetration Testing Framework** - Golang Implementation
 

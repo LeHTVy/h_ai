@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"path/filepath"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -63,6 +64,12 @@ func New(host string, port int, logger *zap.Logger, ollamaURL string, ollamaMode
 func (s *Server) setupRoutes() {
 	// Health check
 	s.router.GET("/health", s.handleHealth)
+
+	// Chat web interface
+	s.router.GET("/chat", s.handleChatPage)
+	
+	// Static files for chat UI
+	s.router.Static("/static", "./web/static")
 
 	// API routes
 	api := s.router.Group("/api")

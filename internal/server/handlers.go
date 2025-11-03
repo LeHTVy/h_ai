@@ -454,6 +454,12 @@ func (s *Server) handleAIChat(c *gin.Context) {
 	c.JSON(http.StatusOK, result)
 }
 
+func (s *Server) handleChatPage(c *gin.Context) {
+	// Serve the chat HTML page
+	chatHTMLPath := filepath.Join(".", "web", "static", "chat.html")
+	c.File(chatHTMLPath)
+}
+
 // Process management handlers
 func (s *Server) handleProcessList(c *gin.Context) {
 	processes := s.executor.ListProcesses()
