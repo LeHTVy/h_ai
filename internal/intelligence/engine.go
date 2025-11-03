@@ -554,3 +554,8 @@ func (e *IntelligentDecisionEngine) AnalyzeScanResults(tool string, results stri
 	
 	return e.ollamaClient.AnalyzeScanResults(tool, results, profileStr)
 }
+
+// GetOllamaClient returns the Ollama client if available
+func (e *IntelligentDecisionEngine) GetOllamaClient() *ai.OllamaClient {
+	return e.ollamaClient
+}

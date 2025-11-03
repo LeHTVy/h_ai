@@ -383,6 +383,76 @@ func (s *Server) handleAnalyzeResults(c *gin.Context) {
 	c.JSON(http.StatusOK, result)
 }
 
+func (s *Server) handleAIChat(c *gin.Context) {
+	var req struct {
+		Messages []struct {
+			Role    string `json:"role" binding:"required"`
+			Content string `json:"content" binding:"required"`
+		} `json:"messages" binding:"required"`
+		Temperature *float64 `json:"temperature,omitempty"`
+		TopP        *float64 `json:"top_p,omitempty"`
+	}
+	
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	// Get Ollama client from engine
+	ollamaClient := s.engine.GetOllamaClient()
+	if ollamaClient == nil || !ollamaClient.IsEnabled() {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"success": false,
+			"error":   "Ollama AI is not available",
+			"message": "Please configure --ollama-url and --ollama-model flags when starting the server.",
+		})
+		return
+	}
+
+	// Convert request messages to AI messages
+	aiMessages := make([]ai.Message, 0, len(req.Messages))
+	for _, msg := range req.Messages {
+		aiMessages = append(aiMessages, ai.Message{
+			Role:    msg.Role,
+			Content: msg.Content,
+		})
+	}
+
+	// Set options
+	options := &ai.Options{}
+	if req.Temperature != nil {
+		options.Temperature = *req.Temperature
+	} else {
+		options.Temperature = 0.7 // Default temperature
+	}
+	if req.TopP != nil {
+		options.TopP = *req.TopP
+	} else {
+		options.TopP = 0.9 // Default top_p
+	}
+
+	s.logger.Info("Processing AI chat request", 
+		zap.Int("message_count", len(aiMessages)))
+
+	// Call Ollama chat
+	response, err := ollamaClient.Chat(aiMessages, options)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"success": false,
+			"error":   err.Error(),
+		})
+		return
+	}
+
+	result := map[string]interface{}{
+		"success": true,
+		"response": response,
+		"message_count": len(aiMessages),
+	}
+
+	c.JSON(http.StatusOK, result)
+}
+
 // Process management handlers
 func (s *Server) handleProcessList(c *gin.Context) {
 	processes := s.executor.ListProcesses()

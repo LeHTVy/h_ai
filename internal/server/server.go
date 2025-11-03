@@ -97,6 +97,7 @@ func (s *Server) setupRoutes() {
 			intel.POST("/create-attack-chain", s.handleCreateAttackChain)
 			intel.POST("/smart-scan", s.handleSmartScan)
 			intel.POST("/analyze-results", s.handleAnalyzeResults)
+			intel.POST("/chat", s.handleAIChat)
 		}
 
 		// Process management
