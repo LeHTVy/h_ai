@@ -91,7 +91,7 @@ func (e *IntelligentDecisionEngine) SelectOptimalTools(profile *TargetProfile, o
 	if e.ollamaClient != nil && e.ollamaClient.IsEnabled() {
 		techList := make([]string, 0, len(profile.Technologies))
 		for _, tech := range profile.Technologies {
-			techList = append(techList, tech.Name)
+			techList = append(techList, string(tech))
 		}
 
 		aiTools, err := e.ollamaClient.SuggestTools(string(profile.TargetType), techList, objective)
