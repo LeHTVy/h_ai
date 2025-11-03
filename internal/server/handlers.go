@@ -8,6 +8,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
 
+	"github.com/LeHTVy/h_ai/internal/ai"
 	"github.com/LeHTVy/h_ai/internal/models"
 )
 
