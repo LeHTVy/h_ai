@@ -1,0 +1,14 @@
+{
+  "mcpServers": {
+    "h-ai": {
+      "command": "h-ai-mcp",
+      "args": [
+        "--server",
+        "http://127.0.0.1:8888"
+      ],
+      "description": "H-AI - Advanced Cybersecurity Automation Platform (Go Implementation). Turn off alwaysAllow if you dont want autonomous execution!",
+      "timeout": 300,
+      "alwaysAllow": []
+    }
+  }
+}

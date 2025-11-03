@@ -1,0 +1,13 @@
+bin/
+*.log
+.git/
+.gitignore
+README.md
+CONTRIBUTING.md
+examples/
+.vscode/
+.idea/
+*.swp
+*.swo
+Dockerfile
+.dockerignore
