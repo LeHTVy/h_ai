@@ -16,20 +16,41 @@ H-AI được viết bằng Golang, cung cấp nền tảng tự động hóa b�
 
 ## 🏗️ Kiến trúc
 
+H-AI có **2 components**:
+
+1. **HTTP API Server** (`h-ai-server`) - Chương trình độc lập, REST API
+2. **MCP Server** (`h-ai-mcp`) - Kết nối AI agents với API Server
+
+### Cấu trúc
+
 ```
 H-AI/
 ├── cmd/
-│   ├── server/          # HTTP API Server
-│   └── mcp/             # MCP Server Client
+│   └── mcp/             # MCP Server (cho AI agents)
 ├── internal/
 │   ├── server/          # HTTP server handlers
 │   ├── executor/        # Command execution engine
 │   ├── cache/           # Caching system
 │   ├── tools/            # Security tools manager
+│   ├── intelligence/     # AI Decision Engine
 │   ├── client/           # API client
 │   └── models/           # Data models
-└── main.go              # Server entry point
+└── main.go              # HTTP API Server entry point
 ```
+
+### Hai Cách Sử Dụng
+
+**Option 1: Trực tiếp qua HTTP API** (Không cần AI)
+```
+User → HTTP Request → h-ai-server → Security Tools → Response
+```
+
+**Option 2: Qua AI Agents** (Với Claude/GPT/Cursor)
+```
+User Prompt → AI Agent → MCP Protocol → h-ai-mcp → h-ai-server → Tools → Response
+```
+
+Xem [ARCHITECTURE.md](ARCHITECTURE.md) để hiểu chi tiết.
 
 ## 📦 Cài đặt
 

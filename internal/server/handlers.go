@@ -346,6 +346,43 @@ func (s *Server) handleSmartScan(c *gin.Context) {
 	c.JSON(http.StatusOK, result)
 }
 
+func (s *Server) handleAnalyzeResults(c *gin.Context) {
+	var req struct {
+		Tool     string `json:"tool" binding:"required"`
+		Results  string `json:"results" binding:"required"`
+		Target   string `json:"target" binding:"required"`
+	}
+	
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	s.logger.Info("Analyzing scan results with AI", 
+		zap.String("tool", req.Tool),
+		zap.String("target", req.Target))
+
+	// Use engine to analyze results with AI
+	analysis, err := s.engine.AnalyzeScanResults(req.Tool, req.Results, req.Target)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"success": false,
+			"error":   err.Error(),
+			"message": "AI analysis requires Ollama integration. Please configure --ollama-url and --ollama-model flags when starting the server.",
+		})
+		return
+	}
+
+	result := map[string]interface{}{
+		"success":  true,
+		"tool":     req.Tool,
+		"target":   req.Target,
+		"analysis": analysis,
+	}
+
+	c.JSON(http.StatusOK, result)
+}
+
 // Process management handlers
 func (s *Server) handleProcessList(c *gin.Context) {
 	processes := s.executor.ListProcesses()

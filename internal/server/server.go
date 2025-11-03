@@ -9,6 +9,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
 
+	"github.com/LeHTVy/h_ai/internal/ai"
 	"github.com/LeHTVy/h_ai/internal/cache"
 	"github.com/LeHTVy/h_ai/internal/executor"
 	"github.com/LeHTVy/h_ai/internal/intelligence"
@@ -27,7 +28,7 @@ type Server struct {
 	engine   *intelligence.IntelligentDecisionEngine
 }
 
-func New(host string, port int, logger *zap.Logger) *Server {
+func New(host string, port int, logger *zap.Logger, ollamaURL string, ollamaModel string) *Server {
 	gin.SetMode(gin.ReleaseMode)
 	router := gin.New()
 	router.Use(ginLogger(logger), gin.Recovery())
@@ -35,7 +36,14 @@ func New(host string, port int, logger *zap.Logger) *Server {
 	cache := cache.New(30 * time.Minute, 10*time.Minute)
 	exec := executor.New(logger, cache)
 	toolsMgr := tools.New(logger, exec)
-	decisionEngine := intelligence.NewDecisionEngine(logger)
+	
+	// Initialize Ollama client (can be nil if not configured)
+	var ollamaClient *ai.OllamaClient
+	if ollamaURL != "" || ollamaModel != "" {
+		ollamaClient = ai.NewOllamaClient(ollamaURL, ollamaModel, logger)
+	}
+	
+	decisionEngine := intelligence.NewDecisionEngine(logger, ollamaClient)
 
 	srv := &Server{
 		host:     host,
@@ -88,6 +96,7 @@ func (s *Server) setupRoutes() {
 			intel.POST("/optimize-parameters", s.handleOptimizeParameters)
 			intel.POST("/create-attack-chain", s.handleCreateAttackChain)
 			intel.POST("/smart-scan", s.handleSmartScan)
+			intel.POST("/analyze-results", s.handleAnalyzeResults)
 		}
 
 		// Process management

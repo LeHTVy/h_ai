@@ -7,6 +7,8 @@ import (
 	"strings"
 
 	"go.uber.org/zap"
+
+	"github.com/LeHTVy/h_ai/internal/ai"
 )
 
 // IntelligentDecisionEngine is AI-powered tool selection and parameter optimization engine
@@ -15,6 +17,7 @@ type IntelligentDecisionEngine struct {
 	toolEffectiveness  map[string]map[string]float64
 	technologySignatures map[string]map[string][]string
 	attackPatterns     map[string][]AttackPattern
+	ollamaClient      *ai.OllamaClient
 }
 
 // AttackPattern represents a pattern of tools to use
@@ -25,9 +28,10 @@ type AttackPattern struct {
 }
 
 // NewDecisionEngine creates a new intelligent decision engine
-func NewDecisionEngine(logger *zap.Logger) *IntelligentDecisionEngine {
+func NewDecisionEngine(logger *zap.Logger, ollamaClient *ai.OllamaClient) *IntelligentDecisionEngine {
 	engine := &IntelligentDecisionEngine{
-		logger: logger,
+		logger:        logger,
+		ollamaClient: ollamaClient,
 	}
 	
 	engine.toolEffectiveness = engine.initToolEffectiveness()
@@ -65,6 +69,11 @@ func (e *IntelligentDecisionEngine) AnalyzeTarget(target string) *TargetProfile 
 		profile.ConfidenceScore = 0.7
 	}
 
+	// Enhance analysis with AI if Ollama is available
+	if e.ollamaClient != nil && e.ollamaClient.IsEnabled() {
+		e.enhanceProfileWithAI(profile, target)
+	}
+
 	// Calculate attack surface score
 	profile.AttackSurfaceScore = e.calculateAttackSurfaceScore(profile)
 	
@@ -76,6 +85,24 @@ func (e *IntelligentDecisionEngine) AnalyzeTarget(target string) *TargetProfile 
 
 // SelectOptimalTools selects optimal tools based on target profile and objective
 func (e *IntelligentDecisionEngine) SelectOptimalTools(profile *TargetProfile, objective string) []string {
+	var selectedTools []string
+
+	// Use AI if available
+	if e.ollamaClient != nil && e.ollamaClient.IsEnabled() {
+		techList := make([]string, 0, len(profile.Technologies))
+		for _, tech := range profile.Technologies {
+			techList = append(techList, tech.Name)
+		}
+
+		aiTools, err := e.ollamaClient.SuggestTools(string(profile.TargetType), techList, objective)
+		if err == nil && len(aiTools) > 0 {
+			e.logger.Info("AI suggested tools", zap.Strings("tools", aiTools))
+			return aiTools
+		}
+		e.logger.Warn("AI tool suggestion failed, using rule-based fallback", zap.Error(err))
+	}
+
+	// Fallback to rule-based selection
 	toolScores := make(map[string]float64)
 	
 	// Get effectiveness ratings for target type
@@ -135,7 +162,7 @@ func (e *IntelligentDecisionEngine) SelectOptimalTools(profile *TargetProfile, o
 		maxTools = 15
 	}
 
-	selectedTools := make([]string, 0, maxTools)
+	selectedTools = make([]string, 0, maxTools)
 	for i, ts := range sorted {
 		if i >= maxTools {
 			break
@@ -150,6 +177,27 @@ func (e *IntelligentDecisionEngine) SelectOptimalTools(profile *TargetProfile, o
 
 // OptimizeParameters optimizes tool parameters based on target profile
 func (e *IntelligentDecisionEngine) OptimizeParameters(tool string, profile *TargetProfile, context map[string]interface{}) map[string]interface{} {
+	// Try AI optimization first if available
+	if e.ollamaClient != nil && e.ollamaClient.IsEnabled() {
+		// Add profile info to context
+		aiContext := make(map[string]interface{})
+		for k, v := range context {
+			aiContext[k] = v
+		}
+		aiContext["target_type"] = string(profile.TargetType)
+		aiContext["open_ports"] = profile.OpenPorts
+		
+		aiParams, err := e.ollamaClient.OptimizeParameters(tool, profile.Target, aiContext)
+		if err == nil && aiParams != nil && len(aiParams) > 0 {
+			e.logger.Info("AI optimized parameters", 
+				zap.String("tool", tool),
+				zap.Any("params", aiParams))
+			return aiParams
+		}
+		e.logger.Warn("AI parameter optimization failed, using rule-based fallback", zap.Error(err))
+	}
+
+	// Fallback to rule-based optimization
 	params := make(map[string]interface{})
 
 	switch tool {
@@ -461,4 +509,48 @@ func (e *IntelligentDecisionEngine) initAttackPatterns() map[string][]AttackPatt
 			{Tool: "nuclei", Priority: 2, Params: map[string]interface{}{}},
 		},
 	}
+}
+
+// enhanceProfileWithAI uses AI to enhance target profile analysis
+func (e *IntelligentDecisionEngine) enhanceProfileWithAI(profile *TargetProfile, target string) {
+	prompt := fmt.Sprintf(`You are a cybersecurity expert. Analyze this target and provide insights.
+
+Target: %s
+Detected Type: %s
+
+Provide a JSON response with:
+{
+  "risk_assessment": "low/medium/high",
+  "confidence": 0.0-1.0,
+  "recommendations": ["recommendation1", "recommendation2"]
+}
+
+Return ONLY the JSON object, no additional text.`, target, profile.TargetType)
+
+	options := &ai.Options{
+		Temperature: 0.3,
+		TopP:        0.9,
+	}
+
+	response, err := e.ollamaClient.Generate(prompt, options)
+	if err != nil {
+		e.logger.Warn("AI profile enhancement failed", zap.Error(err))
+		return
+	}
+
+	// Try to parse JSON response (optional - non-critical)
+	// If parsing fails, we continue with rule-based analysis
+	e.logger.Debug("AI enhanced profile analysis", zap.String("response", response))
+}
+
+// AnalyzeScanResults analyzes scan results using AI
+func (e *IntelligentDecisionEngine) AnalyzeScanResults(tool string, results string, target string) (string, error) {
+	if e.ollamaClient == nil || !e.ollamaClient.IsEnabled() {
+		return "", fmt.Errorf("Ollama AI is not available")
+	}
+
+	profile := e.AnalyzeTarget(target)
+	profileStr := fmt.Sprintf("Target Type: %s, Risk Level: %s", profile.TargetType, profile.RiskLevel)
+	
+	return e.ollamaClient.AnalyzeScanResults(tool, results, profileStr)
 }
