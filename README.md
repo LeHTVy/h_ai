@@ -38,6 +38,8 @@ H-AI/
 - Go 1.21 hoặc cao hơn
 - Các security tools cần thiết (nmap, metasploit, v.v.)
 
+> 💡 **Recommended**: Test trên Ubuntu/Kali Linux vì có nhiều security tools sẵn có. Xem [TEST_UBUNTU.md](TEST_UBUNTU.md) cho hướng dẫn chi tiết.
+
 ### Build
 
 ```bash

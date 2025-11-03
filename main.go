@@ -23,12 +23,12 @@ func main() {
 	flag.Parse()
 
 	// Initialize logger
-	logLevel := zap.InfoLevel
-	if *debug {
-		logLevel = zap.DebugLevel
+	logConfig := zap.NewDevelopmentConfig()
+	if !*debug {
+		logConfig.Level = zap.NewAtomicLevelAt(zap.InfoLevel)
 	}
 
-	logger, err := zap.NewDevelopment()
+	logger, err := logConfig.Build()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to initialize logger: %v\n", err)
 		os.Exit(1)

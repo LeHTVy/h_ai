@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
+	"runtime"
 	"sync"
 	"syscall"
 	"time"
@@ -80,9 +81,12 @@ func (e *Executor) executeCommand(command string) ExecutionResult {
 	ctx, cancel := context.WithTimeout(context.Background(), e.timeout)
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, "sh", "-c", command)
-	cmd.SysProcAttr = &syscall.SysProcAttr{
-		Setpgid: true, // Create process group
+	var cmd *exec.Cmd
+	if runtime.GOOS == "windows" {
+		cmd = exec.CommandContext(ctx, "cmd", "/c", command)
+	} else {
+		cmd = exec.CommandContext(ctx, "sh", "-c", command)
+		setUnixProcessGroup(cmd)
 	}
 
 	stdout, err := cmd.StdoutPipe()
@@ -213,24 +217,16 @@ func (e *Executor) GetProcessStatus(pid int) *ProcessInfo {
 
 func (e *Executor) TerminateProcess(pid int) error {
 	e.processLock.RLock()
-	proc, exists := e.processes[pid]
+	_, exists := e.processes[pid]
 	e.processLock.RUnlock()
 
 	if !exists {
 		return fmt.Errorf("process %d not found", pid)
 	}
 
-	// Try to kill the process group
-	pgid, err := syscall.Getpgid(pid)
-	if err == nil {
-		syscall.Kill(-pgid, syscall.SIGTERM)
-		time.Sleep(2 * time.Second)
-		syscall.Kill(-pgid, syscall.SIGKILL)
-	} else {
-		syscall.Kill(pid, syscall.SIGTERM)
-		time.Sleep(2 * time.Second)
-		syscall.Kill(pid, syscall.SIGKILL)
-	}
+	// Platform-specific process termination
+	// Function implementation is in executor_windows.go or executor_unix.go
+	terminateProcess(pid)
 
 	e.unregisterProcess(pid)
 	return nil
@@ -247,7 +243,12 @@ func (e *Executor) GetDashboard() map[string]interface{} {
 
 func (e *Executor) handleCleanup() {
 	sigChan := make(chan os.Signal, 1)
-	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
+	// Platform-specific signal handling
+	if runtime.GOOS == "windows" {
+		signal.Notify(sigChan, os.Interrupt)
+	} else {
+		signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
+	}
 
 	<-sigChan
 	e.logger.Info("Shutting down executor, terminating all processes")
