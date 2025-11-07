@@ -393,6 +393,8 @@ func (s *Server) handleAIChat(c *gin.Context) {
 		} `json:"messages" binding:"required"`
 		Temperature *float64 `json:"temperature,omitempty"`
 		TopP        *float64 `json:"top_p,omitempty"`
+		NumPredict  *int     `json:"num_predict,omitempty"` // Max tokens to generate
+		Model       *string  `json:"model,omitempty"`       // Optional model override
 	}
 	
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -432,9 +434,22 @@ func (s *Server) handleAIChat(c *gin.Context) {
 	} else {
 		options.TopP = 0.9 // Default top_p
 	}
+	// Set num_predict for complete responses
+	if req.NumPredict != nil && *req.NumPredict > 0 {
+		options.NumPredict = *req.NumPredict
+	} else {
+		options.NumPredict = 4096 // Default max tokens
+	}
+
+	// Override model if specified in request
+	if req.Model != nil && *req.Model != "" {
+		ollamaClient.SetModel(*req.Model)
+		s.logger.Info("Using model from request", zap.String("model", *req.Model))
+	}
 
 	s.logger.Info("Processing AI chat request", 
-		zap.Int("message_count", len(aiMessages)))
+		zap.Int("message_count", len(aiMessages)),
+		zap.String("model", ollamaClient.GetModel()))
 
 	// Call Ollama chat
 	response, err := ollamaClient.Chat(aiMessages, options)
@@ -459,6 +474,35 @@ func (s *Server) handleChatPage(c *gin.Context) {
 	// Serve the chat HTML page
 	chatHTMLPath := filepath.Join(".", "web", "static", "chat.html")
 	c.File(chatHTMLPath)
+}
+
+func (s *Server) handleListModels(c *gin.Context) {
+	// Get Ollama client from engine
+	ollamaClient := s.engine.GetOllamaClient()
+	if ollamaClient == nil || !ollamaClient.IsEnabled() {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"success": false,
+			"error":   "Ollama AI is not available",
+			"models":  []string{},
+		})
+		return
+	}
+
+	models, err := ollamaClient.ListModels()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"success": false,
+			"error":   err.Error(),
+			"models":  []string{},
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"models":  models,
+		"current": ollamaClient.GetModel(),
+	})
 }
 
 // Process management handlers

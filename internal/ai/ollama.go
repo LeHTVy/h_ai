@@ -35,6 +35,7 @@ type Options struct {
 	Temperature float64 `json:"temperature,omitempty"`
 	TopP        float64 `json:"top_p,omitempty"`
 	TopK        int     `json:"top_k,omitempty"`
+	NumPredict  int     `json:"num_predict,omitempty"` // Max tokens to generate
 }
 
 // Message represents a chat message
@@ -45,18 +46,18 @@ type Message struct {
 
 // OllamaResponse represents a response from Ollama API
 type OllamaResponse struct {
-	Model              string    `json:"model"`
-	CreatedAt          string    `json:"created_at"`
-	Response           string    `json:"response"`
-	Done               bool      `json:"done"`
-	Context            []int     `json:"context,omitempty"`
-	TotalDuration      int64     `json:"total_duration,omitempty"`
-	LoadDuration       int64     `json:"load_duration,omitempty"`
-	PromptEvalCount    int       `json:"prompt_eval_count,omitempty"`
-	PromptEvalDuration int64     `json:"prompt_eval_duration,omitempty"`
-	EvalCount          int       `json:"eval_count,omitempty"`
-	EvalDuration       int64     `json:"eval_duration,omitempty"`
-	Message            *Message  `json:"message,omitempty"`
+	Model              string   `json:"model"`
+	CreatedAt          string   `json:"created_at"`
+	Response           string   `json:"response"`
+	Done               bool     `json:"done"`
+	Context            []int    `json:"context,omitempty"`
+	TotalDuration      int64    `json:"total_duration,omitempty"`
+	LoadDuration       int64    `json:"load_duration,omitempty"`
+	PromptEvalCount    int      `json:"prompt_eval_count,omitempty"`
+	PromptEvalDuration int64    `json:"prompt_eval_duration,omitempty"`
+	EvalCount          int      `json:"eval_count,omitempty"`
+	EvalDuration       int64    `json:"eval_duration,omitempty"`
+	Message            *Message `json:"message,omitempty"`
 }
 
 // NewOllamaClient creates a new Ollama client
@@ -111,6 +112,59 @@ func (c *OllamaClient) Ping() error {
 	return nil
 }
 
+// ModelInfo represents information about an Ollama model
+type ModelInfo struct {
+	Name       string `json:"name"`
+	ModifiedAt string `json:"modified_at"`
+	Size       int64  `json:"size"`
+}
+
+// ModelsResponse represents the response from /api/tags
+type ModelsResponse struct {
+	Models []ModelInfo `json:"models"`
+}
+
+// ListModels returns a list of available Ollama models
+func (c *OllamaClient) ListModels() ([]string, error) {
+	if !c.enabled {
+		return nil, fmt.Errorf("ollama client is disabled")
+	}
+
+	resp, err := c.httpClient.Get(c.baseURL + "/api/tags")
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch models: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("ollama API returned status %d: %s", resp.StatusCode, string(body))
+	}
+
+	var modelsResp ModelsResponse
+	if err := json.NewDecoder(resp.Body).Decode(&modelsResp); err != nil {
+		return nil, fmt.Errorf("failed to decode models response: %w", err)
+	}
+
+	models := make([]string, 0, len(modelsResp.Models))
+	for _, model := range modelsResp.Models {
+		models = append(models, model.Name)
+	}
+
+	return models, nil
+}
+
+// SetModel changes the model used by this client
+func (c *OllamaClient) SetModel(model string) {
+	c.model = model
+	c.logger.Info("Ollama model changed", zap.String("model", model))
+}
+
+// GetModel returns the current model name
+func (c *OllamaClient) GetModel() string {
+	return c.model
+}
+
 // Generate generates text using Ollama
 func (c *OllamaClient) Generate(prompt string, options *Options) (string, error) {
 	if !c.enabled {
@@ -118,9 +172,9 @@ func (c *OllamaClient) Generate(prompt string, options *Options) (string, error)
 	}
 
 	req := OllamaRequest{
-		Model:  c.model,
-		Prompt: prompt,
-		Stream: false,
+		Model:   c.model,
+		Prompt:  prompt,
+		Stream:  false,
 		Options: options,
 	}
 
@@ -133,9 +187,39 @@ func (c *OllamaClient) Chat(messages []Message, options *Options) (string, error
 		return "", fmt.Errorf("ollama client is disabled")
 	}
 
+	// Ensure we have default options with num_predict for complete responses
+	if options == nil {
+		options = &Options{
+			Temperature: 0.7,
+			TopP:        0.9,
+			NumPredict:  4096, // Default max tokens for complete responses
+		}
+	} else if options.NumPredict == 0 {
+		// If num_predict not set, use default
+		options.NumPredict = 4096
+	}
+
+	// Add system message to encourage complete responses
+	enhancedMessages := make([]Message, 0, len(messages)+1)
+
+	// Check if first message is already a system message
+	if len(messages) > 0 && messages[0].Role == "system" {
+		enhancedMessages = append(enhancedMessages, messages[0])
+		// Enhance existing system message
+		enhancedMessages[0].Content = enhancedMessages[0].Content + "\n\nIMPORTANT: Always provide complete, detailed, and comprehensive answers. Do not cut off mid-sentence. Ensure your responses are fully formed and complete."
+		enhancedMessages = append(enhancedMessages, messages[1:]...)
+	} else {
+		// Add new system message
+		enhancedMessages = append(enhancedMessages, Message{
+			Role:    "system",
+			Content: "You are a helpful AI assistant. Always provide complete, detailed, and comprehensive answers. Do not cut off mid-sentence. Ensure your responses are fully formed and complete. Answer thoroughly and in full sentences.",
+		})
+		enhancedMessages = append(enhancedMessages, messages...)
+	}
+
 	req := OllamaRequest{
 		Model:    c.model,
-		Messages: messages,
+		Messages: enhancedMessages,
 		Stream:   false,
 		Options:  options,
 	}
@@ -330,10 +414,10 @@ func (c *OllamaClient) chatInternal(req OllamaRequest) (string, error) {
 	if resp.StatusCode == http.StatusMethodNotAllowed || resp.StatusCode == http.StatusNotFound {
 		c.logger.Debug("Ollama /api/chat not available, falling back to /api/generate",
 			zap.Int("status", resp.StatusCode))
-		
+
 		// Convert chat messages to a prompt for /api/generate
 		prompt := c.convertMessagesToPrompt(req.Messages)
-		
+
 		// Use generate instead
 		generateReq := OllamaRequest{
 			Model:   req.Model,
@@ -341,7 +425,7 @@ func (c *OllamaClient) chatInternal(req OllamaRequest) (string, error) {
 			Stream:  false,
 			Options: req.Options,
 		}
-		
+
 		return c.generateInternal(generateReq)
 	}
 
@@ -365,7 +449,7 @@ func (c *OllamaClient) chatInternal(req OllamaRequest) (string, error) {
 // convertMessagesToPrompt converts chat messages to a single prompt string
 func (c *OllamaClient) convertMessagesToPrompt(messages []Message) string {
 	var prompt strings.Builder
-	
+
 	for _, msg := range messages {
 		switch msg.Role {
 		case "system":
@@ -376,7 +460,7 @@ func (c *OllamaClient) convertMessagesToPrompt(messages []Message) string {
 			prompt.WriteString(fmt.Sprintf("Assistant: %s\n\n", msg.Content))
 		}
 	}
-	
+
 	prompt.WriteString("Assistant:")
 	return prompt.String()
 }
@@ -407,4 +491,3 @@ func (c *OllamaClient) extractToolNames(response string) []string {
 func contains(s, substr string) bool {
 	return strings.Contains(s, substr)
 }
-

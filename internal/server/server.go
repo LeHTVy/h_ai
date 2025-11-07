@@ -104,6 +104,7 @@ func (s *Server) setupRoutes() {
 			intel.POST("/smart-scan", s.handleSmartScan)
 			intel.POST("/analyze-results", s.handleAnalyzeResults)
 			intel.POST("/chat", s.handleAIChat)
+			intel.GET("/models", s.handleListModels) // List available Ollama models
 		}
 
 		// Process management
