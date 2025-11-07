@@ -37,10 +37,20 @@ func New(host string, port int, logger *zap.Logger, ollamaURL string, ollamaMode
 	exec := executor.New(logger, cache)
 	toolsMgr := tools.New(logger, exec)
 	
-	// Initialize Ollama client (can be nil if not configured)
-	var ollamaClient *ai.OllamaClient
-	if ollamaURL != "" || ollamaModel != "" {
-		ollamaClient = ai.NewOllamaClient(ollamaURL, ollamaModel, logger)
+	// Initialize Ollama client (always try to connect, model can be set later via UI)
+	// If ollamaURL is empty, use default localhost
+	// If ollamaModel is empty, will auto-select first available model
+	ollamaClient := ai.NewOllamaClient(ollamaURL, ollamaModel, logger)
+	
+	// If no model was specified and Ollama is available, try to auto-select first model
+	if ollamaModel == "" && ollamaClient.IsEnabled() {
+		models, err := ollamaClient.ListModels()
+		if err == nil && len(models) > 0 {
+			ollamaClient.SetModel(models[0])
+			logger.Info("Auto-selected first available Ollama model",
+				zap.String("model", models[0]),
+				zap.Strings("available_models", models))
+		}
 	}
 	
 	decisionEngine := intelligence.NewDecisionEngine(logger, ollamaClient)

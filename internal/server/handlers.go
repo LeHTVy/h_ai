@@ -15,10 +15,10 @@ import (
 
 func (s *Server) handleHealth(c *gin.Context) {
 	health := map[string]interface{}{
-		"status":                  "healthy",
-		"version":                 "1.0.0",
-		"timestamp":               "",
-		"tools_status":            s.tools.CheckToolsAvailability(),
+		"status":                        "healthy",
+		"version":                       "1.0.0",
+		"timestamp":                     "",
+		"tools_status":                  s.tools.CheckToolsAvailability(),
 		"all_essential_tools_available": true,
 	}
 	c.JSON(http.StatusOK, health)
@@ -215,12 +215,12 @@ func (s *Server) handleAnalyzeTarget(c *gin.Context) {
 	}
 
 	s.logger.Info("Analyzing target", zap.String("target", req.Target))
-	
+
 	profile := s.engine.AnalyzeTarget(req.Target)
-	
+
 	result := map[string]interface{}{
-		"success":       true,
-		"target":        req.Target,
+		"success":        true,
+		"target":         req.Target,
 		"target_profile": profile,
 	}
 	c.JSON(http.StatusOK, result)
@@ -234,19 +234,19 @@ func (s *Server) handleSelectTools(c *gin.Context) {
 	}
 
 	s.logger.Info("Selecting tools", zap.String("target", req.Target))
-	
+
 	// Analyze target first
 	profile := s.engine.AnalyzeTarget(req.Target)
-	
+
 	// Determine objective
 	objective := req.TargetType
 	if objective == "" {
 		objective = "comprehensive"
 	}
-	
+
 	// Select optimal tools
 	selectedTools := s.engine.SelectOptimalTools(profile, objective)
-	
+
 	result := map[string]interface{}{
 		"success":        true,
 		"target":         req.Target,
@@ -266,19 +266,19 @@ func (s *Server) handleOptimizeParameters(c *gin.Context) {
 	}
 
 	s.logger.Info("Optimizing parameters", zap.String("tool", req.Tool))
-	
+
 	// Create a basic profile from context
 	profile := s.engine.AnalyzeTarget("")
 	if target, ok := req.Context["target"].(string); ok {
 		profile = s.engine.AnalyzeTarget(target)
 	}
-	
+
 	// Optimize parameters
 	optimizedParams := s.engine.OptimizeParameters(req.Tool, profile, req.Context)
-	
+
 	result := map[string]interface{}{
-		"success":         true,
-		"tool":            req.Tool,
+		"success":          true,
+		"tool":             req.Tool,
 		"optimized_params": optimizedParams,
 	}
 	c.JSON(http.StatusOK, result)
@@ -292,15 +292,15 @@ func (s *Server) handleCreateAttackChain(c *gin.Context) {
 	}
 
 	s.logger.Info("Creating attack chain", zap.String("target", req.Target))
-	
+
 	objective := req.AnalysisType
 	if objective == "" {
 		objective = "comprehensive"
 	}
-	
+
 	profile := s.engine.AnalyzeTarget(req.Target)
 	chain := s.engine.CreateAttackChain(profile, objective)
-	
+
 	result := map[string]interface{}{
 		"success":      true,
 		"target":       req.Target,
@@ -318,29 +318,29 @@ func (s *Server) handleSmartScan(c *gin.Context) {
 	}
 
 	s.logger.Info("Starting smart scan", zap.String("target", req.Target))
-	
+
 	objective := req.AnalysisType
 	if objective == "" {
 		objective = "comprehensive"
 	}
-	
+
 	// Analyze target
 	profile := s.engine.AnalyzeTarget(req.Target)
-	
+
 	// Select optimal tools
 	selectedTools := s.engine.SelectOptimalTools(profile, objective)
-	
+
 	// Limit tools if needed
 	maxTools := 5
 	if len(selectedTools) > maxTools {
 		selectedTools = selectedTools[:maxTools]
 	}
-	
+
 	result := map[string]interface{}{
 		"success":        true,
 		"target":         req.Target,
 		"target_profile": profile,
-		"selected_tools":  selectedTools,
+		"selected_tools": selectedTools,
 		"tool_count":     len(selectedTools),
 		"objective":      objective,
 		"message":        "Smart scan prepared. Tools are ready for execution.",
@@ -350,17 +350,17 @@ func (s *Server) handleSmartScan(c *gin.Context) {
 
 func (s *Server) handleAnalyzeResults(c *gin.Context) {
 	var req struct {
-		Tool     string `json:"tool" binding:"required"`
-		Results  string `json:"results" binding:"required"`
-		Target   string `json:"target" binding:"required"`
+		Tool    string `json:"tool" binding:"required"`
+		Results string `json:"results" binding:"required"`
+		Target  string `json:"target" binding:"required"`
 	}
-	
+
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
-	s.logger.Info("Analyzing scan results with AI", 
+	s.logger.Info("Analyzing scan results with AI",
 		zap.String("tool", req.Tool),
 		zap.String("target", req.Target))
 
@@ -396,7 +396,7 @@ func (s *Server) handleAIChat(c *gin.Context) {
 		NumPredict  *int     `json:"num_predict,omitempty"` // Max tokens to generate
 		Model       *string  `json:"model,omitempty"`       // Optional model override
 	}
-	
+
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
@@ -408,7 +408,7 @@ func (s *Server) handleAIChat(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"success": false,
 			"error":   "Ollama AI is not available",
-			"message": "Please configure --ollama-url and --ollama-model flags when starting the server.",
+			"message": "Please ensure Ollama is running and accessible. You can start the server without --ollama-model and select a model from the UI.",
 		})
 		return
 	}
@@ -447,7 +447,7 @@ func (s *Server) handleAIChat(c *gin.Context) {
 		s.logger.Info("Using model from request", zap.String("model", *req.Model))
 	}
 
-	s.logger.Info("Processing AI chat request", 
+	s.logger.Info("Processing AI chat request",
 		zap.Int("message_count", len(aiMessages)),
 		zap.String("model", ollamaClient.GetModel()))
 
@@ -462,8 +462,8 @@ func (s *Server) handleAIChat(c *gin.Context) {
 	}
 
 	result := map[string]interface{}{
-		"success": true,
-		"response": response,
+		"success":       true,
+		"response":      response,
 		"message_count": len(aiMessages),
 	}
 
@@ -559,8 +559,8 @@ func (s *Server) handleCacheStats(c *gin.Context) {
 func (s *Server) handleTelemetry(c *gin.Context) {
 	telemetry := map[string]interface{}{
 		"uptime":           time.Since(time.Now()).Seconds(), // TODO: Track actual uptime
-		"cpu_usage":        0,                                 // TODO: Implement CPU usage tracking
-		"memory_usage":     0,                                 // TODO: Implement memory usage tracking
+		"cpu_usage":        0,                                // TODO: Implement CPU usage tracking
+		"memory_usage":     0,                                // TODO: Implement memory usage tracking
 		"active_processes": len(s.executor.ListProcesses()),
 	}
 	c.JSON(http.StatusOK, telemetry)

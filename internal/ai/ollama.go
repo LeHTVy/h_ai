@@ -381,12 +381,64 @@ func (c *OllamaClient) generateInternal(req OllamaRequest) (string, error) {
 		return "", fmt.Errorf("ollama API returned status %d: %s", resp.StatusCode, string(body))
 	}
 
-	var ollamaResp OllamaResponse
-	if err := json.NewDecoder(resp.Body).Decode(&ollamaResp); err != nil {
-		return "", fmt.Errorf("failed to decode response: %w", err)
+	// Read entire response body
+	bodyBytes, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", fmt.Errorf("failed to read response body: %w", err)
 	}
 
+	// Try to decode as single JSON object
+	var ollamaResp OllamaResponse
+	if err := json.Unmarshal(bodyBytes, &ollamaResp); err != nil {
+		// If single object fails, might be streaming format
+		return c.parseStreamingResponse(bodyBytes)
+	}
+
+	// Check if response is complete
+	if ollamaResp.Done {
+		return ollamaResp.Response, nil
+	}
+
+	// If not done, return what we have (should not happen with stream=false)
 	return ollamaResp.Response, nil
+}
+
+// parseStreamingResponse parses newline-delimited JSON streaming response
+func (c *OllamaClient) parseStreamingResponse(bodyBytes []byte) (string, error) {
+	var fullResponse strings.Builder
+	lines := strings.Split(string(bodyBytes), "\n")
+
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+
+		var chunk OllamaResponse
+		if err := json.Unmarshal([]byte(line), &chunk); err != nil {
+			c.logger.Warn("Failed to parse streaming chunk", zap.Error(err), zap.String("chunk", line))
+			continue
+		}
+
+		// Accumulate response
+		if chunk.Message != nil {
+			fullResponse.WriteString(chunk.Message.Content)
+		} else if chunk.Response != "" {
+			fullResponse.WriteString(chunk.Response)
+		}
+
+		// If done, we have the complete response
+		if chunk.Done {
+			break
+		}
+	}
+
+	result := fullResponse.String()
+	if result == "" {
+		return "", fmt.Errorf("no valid response found in streaming data")
+	}
+
+	return result, nil
 }
 
 func (c *OllamaClient) chatInternal(req OllamaRequest) (string, error) {
@@ -434,11 +486,30 @@ func (c *OllamaClient) chatInternal(req OllamaRequest) (string, error) {
 		return "", fmt.Errorf("ollama API returned status %d: %s", resp.StatusCode, string(body))
 	}
 
-	var ollamaResp OllamaResponse
-	if err := json.NewDecoder(resp.Body).Decode(&ollamaResp); err != nil {
-		return "", fmt.Errorf("failed to decode response: %w", err)
+	// Read entire response body first
+	bodyBytes, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", fmt.Errorf("failed to read response body: %w", err)
 	}
 
+	// Try to decode as single JSON object first
+	var ollamaResp OllamaResponse
+	if err := json.Unmarshal(bodyBytes, &ollamaResp); err != nil {
+		// If single object fails, might be streaming format (newline-delimited JSON)
+		// Try to parse as streaming response
+		return c.parseStreamingResponse(bodyBytes)
+	}
+
+	// Check if response is complete
+	if ollamaResp.Done {
+		if ollamaResp.Message != nil {
+			return ollamaResp.Message.Content, nil
+		}
+		return ollamaResp.Response, nil
+	}
+
+	// If not done, might be partial response - try to accumulate
+	// This should not happen with stream=false, but handle it anyway
 	if ollamaResp.Message != nil {
 		return ollamaResp.Message.Content, nil
 	}

@@ -19,8 +19,8 @@ func main() {
 		port       = flag.Int("port", defaultPort, "Port for the API server")
 		host       = flag.String("host", defaultHost, "Host for the API server")
 		debug      = flag.Bool("debug", false, "Enable debug mode")
-		ollamaURL  = flag.String("ollama-url", "", "Ollama API URL (default: http://localhost:11434)")
-		ollamaModel = flag.String("ollama-model", "", "Ollama model to use (default: llama2)")
+		ollamaURL  = flag.String("ollama-url", "", "Ollama API URL (default: http://localhost:11434, optional)")
+		ollamaModel = flag.String("ollama-model", "", "Ollama model to use (optional, can be selected from UI)")
 	)
 	flag.Parse()
 
@@ -48,11 +48,16 @@ func main() {
 }
 
 func printBanner(port int, debug bool, ollamaURL string, ollamaModel string) {
-	aiStatus := "Disabled"
-	if ollamaURL != "" || ollamaModel != "" {
-		aiStatus = fmt.Sprintf("Enabled (URL: %s, Model: %s)", 
-			func() string { if ollamaURL == "" { return "default" }; return ollamaURL }(),
-			func() string { if ollamaModel == "" { return "llama2" }; return ollamaModel }())
+	aiStatus := "Auto-detect (will try to connect to Ollama)"
+	if ollamaURL != "" {
+		aiStatus = fmt.Sprintf("URL: %s", ollamaURL)
+		if ollamaModel != "" {
+			aiStatus += fmt.Sprintf(", Model: %s", ollamaModel)
+		} else {
+			aiStatus += " (model can be selected from UI)"
+		}
+	} else if ollamaModel != "" {
+		aiStatus = fmt.Sprintf("Model: %s (using default URL)", ollamaModel)
 	}
 	
 	banner := fmt.Sprintf(`
