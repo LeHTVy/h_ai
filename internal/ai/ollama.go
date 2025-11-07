@@ -492,29 +492,54 @@ func (c *OllamaClient) chatInternal(req OllamaRequest) (string, error) {
 		return "", fmt.Errorf("failed to read response body: %w", err)
 	}
 
+	if len(bodyBytes) == 0 {
+		return "", fmt.Errorf("empty response from Ollama API")
+	}
+
 	// Try to decode as single JSON object first
 	var ollamaResp OllamaResponse
 	if err := json.Unmarshal(bodyBytes, &ollamaResp); err != nil {
 		// If single object fails, might be streaming format (newline-delimited JSON)
 		// Try to parse as streaming response
+		preview := string(bodyBytes)
+		if len(preview) > 200 {
+			preview = preview[:200] + "..."
+		}
+		c.logger.Debug("Response is not single JSON object, trying streaming format",
+			zap.Int("body_size", len(bodyBytes)),
+			zap.String("body_preview", preview))
 		return c.parseStreamingResponse(bodyBytes)
 	}
 
 	// Check if response is complete
 	if ollamaResp.Done {
-		if ollamaResp.Message != nil {
+		if ollamaResp.Message != nil && ollamaResp.Message.Content != "" {
 			return ollamaResp.Message.Content, nil
 		}
-		return ollamaResp.Response, nil
+		if ollamaResp.Response != "" {
+			return ollamaResp.Response, nil
+		}
+		// If both are empty but done=true, log warning
+		c.logger.Warn("Ollama response marked as done but content is empty",
+			zap.Any("response", ollamaResp))
+		return "", fmt.Errorf("empty response content from Ollama")
 	}
 
-	// If not done, might be partial response - try to accumulate
+	// If not done, might be partial response - return what we have
 	// This should not happen with stream=false, but handle it anyway
-	if ollamaResp.Message != nil {
+	if ollamaResp.Message != nil && ollamaResp.Message.Content != "" {
+		c.logger.Warn("Ollama response not marked as done, returning partial content",
+			zap.Int("content_length", len(ollamaResp.Message.Content)))
 		return ollamaResp.Message.Content, nil
 	}
 
-	return ollamaResp.Response, nil
+	if ollamaResp.Response != "" {
+		c.logger.Warn("Ollama response not marked as done, returning partial content",
+			zap.Int("content_length", len(ollamaResp.Response)))
+		return ollamaResp.Response, nil
+	}
+
+	return "", fmt.Errorf("empty response from Ollama (done=%v)", ollamaResp.Done)
 }
 
 // convertMessagesToPrompt converts chat messages to a single prompt string

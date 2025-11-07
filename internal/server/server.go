@@ -45,11 +45,18 @@ func New(host string, port int, logger *zap.Logger, ollamaURL string, ollamaMode
 	// If no model was specified and Ollama is available, try to auto-select first model
 	if ollamaModel == "" && ollamaClient.IsEnabled() {
 		models, err := ollamaClient.ListModels()
-		if err == nil && len(models) > 0 {
+		if err != nil {
+			logger.Warn("Failed to list Ollama models during startup, will use default",
+				zap.Error(err),
+				zap.String("default_model", ollamaClient.GetModel()))
+		} else if len(models) > 0 {
 			ollamaClient.SetModel(models[0])
 			logger.Info("Auto-selected first available Ollama model",
 				zap.String("model", models[0]),
 				zap.Strings("available_models", models))
+		} else {
+			logger.Warn("No Ollama models found, using default model",
+				zap.String("default_model", ollamaClient.GetModel()))
 		}
 	}
 	
